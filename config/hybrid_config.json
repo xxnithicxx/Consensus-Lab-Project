@@ -1,10 +1,12 @@
 {
-    "light_difficulty": 2,
+    "light_difficulty": 1,
     "block_time_ms": 300,
     "finality_depth": 4,
     "initial_balances": [1000, 1000, 1000, 1000, 1000],
     "stakes": [200, 300, 150, 250, 100],
-    "leader_timeout_ms": 1000,
+    "leader_timeout_ms": 2000,
+    "max_backup_leaders": 3,
+    "backup_timeout_multiplier": 0.5,
     "network": {
         "base_delay_ms": 50,
         "max_delay_ms": 200,

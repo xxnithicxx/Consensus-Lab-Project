@@ -3,9 +3,12 @@ Blockchain logic implementation
 """
 
 import time
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, TYPE_CHECKING
 from .block import Block
 from .transaction import Transaction
+
+if TYPE_CHECKING:
+    from ..consensus.base import ConsensusAlgorithm
 
 
 class Blockchain:
@@ -13,14 +16,16 @@ class Blockchain:
     Main blockchain implementation
     """
     
-    def __init__(self, finality_depth: int = 4):
+    def __init__(self, finality_depth: int = 4, consensus: Optional['ConsensusAlgorithm'] = None):
         """
         Initialize blockchain
         
         Args:
             finality_depth: Number of confirmations for finality (k parameter)
+            consensus: Consensus algorithm instance for fork resolution
         """
         self.finality_depth = finality_depth
+        self.consensus = consensus
         self.main_chain: List[Block] = []
         self.all_blocks: Dict[str, Block] = {}  # hash -> block
         self.pending_transactions: List[Transaction] = []
@@ -30,6 +35,15 @@ class Blockchain:
         genesis = self.create_genesis_block()
         self.main_chain.append(genesis)
         self.all_blocks[genesis.hash] = genesis
+    
+    def set_consensus(self, consensus: 'ConsensusAlgorithm') -> None:
+        """
+        Set the consensus algorithm for fork resolution
+        
+        Args:
+            consensus: Consensus algorithm instance
+        """
+        self.consensus = consensus
     
     def create_genesis_block(self) -> Block:
         """
@@ -104,8 +118,12 @@ class Blockchain:
             # Update balances when new block is added to main chain
             self.update_balances_from_block(block)
         else:
-            # Fork detected - need to resolve
-            self.resolve_forks()
+            # Fork detected - need to resolve using consensus algorithm
+            if self.consensus:
+                self.resolve_forks_with_consensus()
+            else:
+                # Fallback to simple longest chain if no consensus algorithm
+                self.resolve_forks_fallback()
             # After fork resolution, recalculate all balances
             self.recalculate_balances()
         
@@ -147,9 +165,29 @@ class Blockchain:
         
         return chain_length - self.finality_depth - 1
     
-    def resolve_forks(self) -> None:
+    def resolve_forks_with_consensus(self) -> None:
         """
-        Resolve forks using the longest chain rule
+        Resolve forks using the consensus algorithm's select_best_chain method
+        """
+        if not self.consensus:
+            return
+            
+        # Find all possible chains starting from genesis
+        all_chains = self._find_all_chains()
+        
+        if not all_chains:
+            return
+        
+        # Use consensus algorithm to select best chain
+        best_chain = self.consensus.select_best_chain(all_chains)
+        
+        # Update main chain if a different one is selected
+        if best_chain and len(best_chain) >= len(self.main_chain):
+            self.main_chain = best_chain
+    
+    def resolve_forks_fallback(self) -> None:
+        """
+        Fallback fork resolution using the longest chain rule (for backward compatibility)
         """
         # Find all possible chains starting from genesis
         all_chains = self._find_all_chains()

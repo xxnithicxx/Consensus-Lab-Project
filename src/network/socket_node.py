@@ -34,11 +34,14 @@ class SocketNode:
         self.consensus_type = consensus_type
         self.network_config = network_config
         
-        # Initialize blockchain
-        self.blockchain = Blockchain(finality_depth=consensus_config.get('finality_depth', 4))
-        
         # Initialize consensus algorithm
         self.consensus = self.create_consensus(consensus_type, consensus_config)
+        
+        # Initialize blockchain with consensus
+        self.blockchain = Blockchain(
+            finality_depth=consensus_config.get('finality_depth', 4),
+            consensus=self.consensus
+        )
         
         # Network state
         self.peers: Set[str] = {'0', '1', '2', '3', '4'}

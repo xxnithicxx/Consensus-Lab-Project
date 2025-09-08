@@ -27,22 +27,58 @@ class HybridConsensus(ConsensusAlgorithm):
         self.light_difficulty = config.get('light_difficulty', 2)
         self.stakes = config.get('stakes', [200, 300, 150, 250, 100])
         self.leader_timeout_ms = config.get('leader_timeout_ms', 1000)
+        
+        # Leader failure handling configuration
+        self.max_backup_leaders = config.get('max_backup_leaders', 3)
+        self.backup_timeout_multiplier = config.get('backup_timeout_multiplier', 0.5)
+        
+        # Track height timing for timeout detection
+        self.height_start_times: Dict[int, float] = {}
+        self.height_proposals: Dict[int, List[str]] = {}  # Track who has proposed for each height
     
     def can_propose_block(self, node_id: str, height: int) -> bool:
         """
-        Check if node is the selected leader for this height
+        Enhanced block proposal check with leader failure handling
         
         Args:
             node_id: ID of the node
             height: Block height
             
         Returns:
-            bool: True if node is the leader
+            bool: True if node can propose (primary leader or backup after timeout)
         """
         try:
             node_id_int = int(node_id)
-            selected_leader = self.select_leader(height)
-            return node_id_int == selected_leader
+            current_time = time.time()
+            
+            # Initialize height timing if not seen before
+            if height not in self.height_start_times:
+                self.height_start_times[height] = current_time
+                self.height_proposals[height] = []
+            
+            # Check if this node is the primary leader
+            primary_leader = self.select_leader(height)
+            if node_id_int == primary_leader:
+                return True
+            
+            # Check if primary leader has timed out and this node is a backup
+            if self.is_leader_timeout_expired(height, self.height_start_times[height]):
+                backup_leaders = self.get_backup_leaders(height, primary_leader)
+                
+                # Check if this node is in the backup leader list
+                if node_id_int in backup_leaders:
+                    backup_index = backup_leaders.index(node_id_int)
+                    backup_timeout = self.get_backup_timeout(backup_index)
+                    
+                    # Check if it's this backup's turn (previous backups have also timed out)
+                    time_elapsed = current_time - self.height_start_times[height]
+                    required_time = (self.leader_timeout_ms / 1000.0) + (backup_timeout * backup_index)
+                    
+                    if time_elapsed >= required_time:
+                        return True
+            
+            return False
+            
         except (ValueError, IndexError):
             return False
     
@@ -79,7 +115,7 @@ class HybridConsensus(ConsensusAlgorithm):
     
     def create_block(self, height: int, prev_hash: str, transactions: List[Transaction], proposer_id: str) -> Block:
         """
-        Create a new block with light PoW
+        Create a new block with light PoW (enhanced with leader tracking)
         
         Args:
             height: Block height
@@ -90,6 +126,11 @@ class HybridConsensus(ConsensusAlgorithm):
         Returns:
             Block: New block with light PoW
         """
+        # Track that this node has proposed for this height
+        if height not in self.height_proposals:
+            self.height_proposals[height] = []
+        self.height_proposals[height].append(proposer_id)
+        
         # Create block
         block = Block(
             height=height,
@@ -99,8 +140,10 @@ class HybridConsensus(ConsensusAlgorithm):
             nonce=0
         )
         
-        # Add proposer information to block (store in unused field)
+        # Add proposer information and current leader context
         block.proposer_id = proposer_id
+        block.expected_leader = self.get_current_leader(height)
+        block.is_backup_proposal = (int(proposer_id) != self.select_leader(height))
         
         # Perform light PoW
         return self.light_pow(block)
@@ -132,7 +175,7 @@ class HybridConsensus(ConsensusAlgorithm):
     
     def validate_block(self, block: Block, proposer_id: str) -> bool:
         """
-        Validate block according to hybrid consensus rules
+        Enhanced block validation with leader failure handling
         
         Args:
             block: Block to validate
@@ -141,8 +184,8 @@ class HybridConsensus(ConsensusAlgorithm):
         Returns:
             bool: True if block is valid
         """
-        # Validate leader selection
-        if not self.validate_leader_selection(block, block.height):
+        # Validate that the proposer was authorized (including backup scenarios)
+        if not self.validate_leader_selection_with_timeout(block, block.height):
             return False
         
         # Validate light PoW
@@ -174,6 +217,40 @@ class HybridConsensus(ConsensusAlgorithm):
         
         # If proposer not stored, we can't validate (assume valid for now)
         return True
+    
+    def validate_leader_selection_with_timeout(self, block: Block, height: int) -> bool:
+        """
+        Validate leader selection considering timeout scenarios
+        
+        Args:
+            block: Block to validate
+            height: Block height
+            
+        Returns:
+            bool: True if leader selection is valid (including backup scenarios)
+        """
+        if not hasattr(block, 'proposer_id'):
+            return True  # Can't validate without proposer info
+        
+        try:
+            proposer_id = int(block.proposer_id)
+            primary_leader = self.select_leader(height)
+            
+            # Check if proposer is primary leader
+            if proposer_id == primary_leader:
+                return True
+            
+            # Check if proposer is a valid backup leader
+            backup_leaders = self.get_backup_leaders(height, primary_leader)
+            if proposer_id in backup_leaders:
+                # In a real implementation, you'd validate the timing here
+                # For simulation purposes, we accept backup proposals
+                return True
+            
+            return False
+            
+        except (ValueError, AttributeError):
+            return True  # Can't validate, assume valid
     
     def validate_light_pow(self, block: Block) -> bool:
         """
@@ -295,3 +372,78 @@ class HybridConsensus(ConsensusAlgorithm):
         """
         timeout_seconds = self.leader_timeout_ms / 1000.0
         return (time.time() - start_time) > timeout_seconds
+    
+    def get_backup_leaders(self, height: int, primary_leader: int) -> List[int]:
+        """
+        Get ordered list of backup leaders for a given height
+        
+        Args:
+            height: Block height
+            primary_leader: ID of primary leader
+            
+        Returns:
+            List[int]: Ordered list of backup leader IDs
+        """
+        # Create a deterministic but different seed for backup selection
+        backup_seed = hash(f"backup_{height}_{primary_leader}") % 1000000
+        random.seed(backup_seed)
+        
+        # Get all nodes except primary leader
+        available_nodes = [i for i in range(len(self.stakes)) if i != primary_leader]
+        
+        # Sort by stake (higher stake = higher priority as backup)
+        available_nodes.sort(key=lambda x: self.stakes[x], reverse=True)
+        
+        # Take up to max_backup_leaders
+        return available_nodes[:self.max_backup_leaders]
+    
+    def get_backup_timeout(self, backup_index: int) -> float:
+        """
+        Calculate timeout for backup leader at given index
+        
+        Args:
+            backup_index: Index of backup leader (0 = first backup, 1 = second, etc.)
+            
+        Returns:
+            float: Timeout in seconds for this backup
+        """
+        base_timeout = self.leader_timeout_ms / 1000.0
+        return base_timeout * self.backup_timeout_multiplier
+    
+    def get_current_leader(self, height: int) -> int:
+        """
+        Get the current active leader for a height (considering timeouts)
+        
+        Args:
+            height: Block height
+            
+        Returns:
+            int: ID of current active leader
+        """
+        current_time = time.time()
+        
+        if height not in self.height_start_times:
+            self.height_start_times[height] = current_time
+            return self.select_leader(height)
+        
+        start_time = self.height_start_times[height]
+        primary_leader = self.select_leader(height)
+        
+        # Check if primary leader timeout has expired
+        if not self.is_leader_timeout_expired(height, start_time):
+            return primary_leader
+        
+        # Check which backup leader should be active
+        backup_leaders = self.get_backup_leaders(height, primary_leader)
+        time_elapsed = current_time - start_time
+        primary_timeout = self.leader_timeout_ms / 1000.0
+        
+        for i, backup_leader in enumerate(backup_leaders):
+            backup_timeout = self.get_backup_timeout(i)
+            required_time = primary_timeout + (backup_timeout * (i + 1))
+            
+            if time_elapsed < required_time:
+                return backup_leader
+        
+        # If all backups have timed out, return the last backup
+        return backup_leaders[-1] if backup_leaders else primary_leader
