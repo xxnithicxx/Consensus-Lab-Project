@@ -1,0 +1,27 @@
+{
+    "light_difficulty": 2,
+    "block_time_ms": 300,
+    "finality_depth": 4,
+    "initial_balances": [1000, 1000, 1000, 1000, 1000],
+    "stakes": [200, 300, 150, 250, 100],
+    "leader_timeout_ms": 1000,
+    "network": {
+        "base_delay_ms": 50,
+        "max_delay_ms": 200,
+        "partition_duration_ms": 5000,
+        "heal_duration_ms": 3000
+    },
+    "consensus": {
+        "stake_selection_seed": 42,
+        "leader_rotation_enabled": true,
+        "fallback_to_pow": true
+    },
+    "transactions": {
+        "max_per_block": 10,
+        "generation_rate_per_second": 2
+    },
+    "simulation": {
+        "duration_seconds": 30,
+        "log_interval_ms": 1000
+    }
+}

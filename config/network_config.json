@@ -1,0 +1,26 @@
+{
+    "network_topology": "fully_connected",
+    "node_count": 5,
+    "delay_distribution": "uniform",
+    "delay_config": {
+        "min_delay_ms": 10,
+        "max_delay_ms": 200,
+        "base_delay_ms": 50,
+        "jitter_percentage": 20
+    },
+    "partition_config": {
+        "partition_type": "balanced",
+        "group_sizes": [2, 3],
+        "partition_duration_ms": 5000,
+        "heal_duration_ms": 3000
+    },
+    "reliability": {
+        "message_loss_rate": 0.01,
+        "duplicate_message_rate": 0.005,
+        "reorder_probability": 0.02
+    },
+    "bandwidth": {
+        "max_messages_per_second": 100,
+        "message_queue_size": 1000
+    }
+}

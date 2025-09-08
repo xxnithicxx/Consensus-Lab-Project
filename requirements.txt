@@ -1,0 +1,30 @@
+# Blockchain Simulator Requirements
+
+# Core dependencies
+hashlib2==1.0.1
+
+# For testing and development
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+
+# For logging and utilities
+colorlog>=6.7.0
+
+# For network simulation (optional)
+# networkx>=3.0.0
+
+# For configuration management
+pyyaml>=6.0.0
+
+# For cryptographic operations (simple implementation)
+# cryptography>=40.0.0  # Uncomment if you want real crypto
+
+# For performance monitoring
+psutil>=5.9.0
+
+# For data visualization (optional)
+# matplotlib>=3.6.0
+# numpy>=1.24.0
+
+# Note: This project uses Python's built-in libraries primarily
+# Most dependencies are optional and for enhanced features
