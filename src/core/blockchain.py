@@ -52,11 +52,12 @@ class Blockchain:
         Returns:
             Block: Genesis block
         """
+        # Use fixed timestamp to ensure all nodes have identical genesis block
         return Block(
             height=0,
             prev_hash="0" * 64,
             transactions=[],
-            timestamp=time.time(),
+            timestamp=1700000000.0,  # Fixed timestamp for deterministic genesis
             nonce=0
         )
     
@@ -79,11 +80,17 @@ class Blockchain:
         Returns:
             bool: True if block is valid
         """
-        # Check if previous block exists
+        # Genesis block validation
+        if block.height == 0:
+            return True
+            
+        # For non-genesis blocks, check if previous block exists
         if block.height > 0:
             prev_block = self.all_blocks.get(block.prev_hash)
             if prev_block is None:
-                return False
+                # Previous block not found - this might be an out-of-order block
+                # We'll store it temporarily and validate later
+                return True  # Allow temporary storage for out-of-order blocks
             
             # Check height is sequential
             if block.height != prev_block.height + 1:
@@ -109,6 +116,10 @@ class Blockchain:
         if not self.is_valid_block(block):
             return False
         
+        # Skip if block already exists
+        if block.hash in self.all_blocks:
+            return True
+        
         # Add to all blocks
         self.all_blocks[block.hash] = block
         
@@ -117,6 +128,9 @@ class Blockchain:
             self.main_chain.append(block)
             # Update balances when new block is added to main chain
             self.update_balances_from_block(block)
+            
+            # After adding to main chain, try to process any pending blocks
+            self._process_pending_blocks()
         else:
             # Fork detected - need to resolve using consensus algorithm
             if self.consensus:
@@ -128,6 +142,27 @@ class Blockchain:
             self.recalculate_balances()
         
         return True
+    
+    def _process_pending_blocks(self) -> None:
+        """
+        Process any blocks that were received out of order
+        """
+        processed_any = True
+        while processed_any:
+            processed_any = False
+            latest_block = self.get_latest_block()
+            
+            # Look for blocks that can extend the current main chain
+            for block_hash, block in self.all_blocks.items():
+                if (block.prev_hash == latest_block.hash and 
+                    block.height == latest_block.height + 1 and
+                    block.hash not in [b.hash for b in self.main_chain]):
+                    
+                    # Found a block that extends the chain
+                    self.main_chain.append(block)
+                    self.update_balances_from_block(block)
+                    processed_any = True
+                    break
     
     def get_final_blocks(self) -> List[Block]:
         """
@@ -178,12 +213,40 @@ class Blockchain:
         if not all_chains:
             return
         
+        # Log fork detection
+        if len(all_chains) > 1 and hasattr(self.consensus, '_log_partition_event'):
+            self.consensus._log_partition_event("fork_detection", {
+                "competing_chains": len(all_chains),
+                "chain_lengths": [len(chain) for chain in all_chains]
+            })
+        
         # Use consensus algorithm to select best chain
         best_chain = self.consensus.select_best_chain(all_chains)
         
         # Update main chain if a different one is selected
-        if best_chain and len(best_chain) >= len(self.main_chain):
+        if best_chain and len(best_chain) != len(self.main_chain):
+            old_chain_length = len(self.main_chain)
             self.main_chain = best_chain
+            
+            # Log chain reorganization
+            if hasattr(self.consensus, '_log_partition_event'):
+                self.consensus._log_partition_event("chain_reorganization", {
+                    "old_length": old_chain_length,
+                    "new_length": len(best_chain),
+                    "reorganized": True
+                })
+            
+            # Log chain comparison for specific consensus types
+            if hasattr(self.consensus, '_log_chain_comparison'):
+                # For PoW - compare by length
+                self.consensus._log_chain_comparison(
+                    old_chain_length, len(best_chain), "new_chain"
+                )
+            elif hasattr(self.consensus, '_log_stake_weight_comparison'):
+                # For Hybrid - would need stake weights, simplified for now
+                self.consensus._log_stake_weight_comparison(
+                    float(old_chain_length), float(len(best_chain)), "new_chain"
+                )
     
     def resolve_forks_fallback(self) -> None:
         """

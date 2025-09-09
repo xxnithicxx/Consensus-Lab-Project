@@ -96,7 +96,11 @@ class Block:
             nonce=data['nonce']
         )
         block.proposer_id = data.get('proposer_id', '')
-        block.hash = data['hash']
+        # Use the hash from data if provided, otherwise calculate it
+        if 'hash' in data and data['hash']:
+            block.hash = data['hash']
+        else:
+            block.hash = block.calculate_hash()
         return block
     
     def __str__(self) -> str:

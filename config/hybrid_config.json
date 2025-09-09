@@ -25,5 +25,8 @@
     "simulation": {
         "duration_seconds": 30,
         "log_interval_ms": 1000
+    },
+    "logging": {
+        "log_mode": "presentation"
     }
 }

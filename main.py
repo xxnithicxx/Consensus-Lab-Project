@@ -228,7 +228,7 @@ class SocketSimulator:
             try:
                 info = self.node.get_blockchain_info()
                 self.logger.info(f"Blockchain state: {info}")
-                time.sleep(2.0)  # Monitor every 2 seconds
+                time.sleep(5.0)  # Monitor every 5 seconds to reduce log noise
             except Exception as e:
                 self.logger.error(f"Monitor error: {e}")
                 time.sleep(2.0)

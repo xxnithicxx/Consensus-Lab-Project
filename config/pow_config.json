@@ -1,17 +1,16 @@
 {
-    "difficulty": 2,
+    "difficulty": 3,
     "block_time_ms": 500,
-    "finality_depth": 4,
+    "finality_depth": 6,
     "initial_balances": [1000, 1000, 1000, 1000, 1000],
+    "mining": {
+        "max_mining_time_ms": 3000
+    },
     "network": {
         "base_delay_ms": 50,
         "max_delay_ms": 200,
         "partition_duration_ms": 5000,
         "heal_duration_ms": 3000
-    },
-    "mining": {
-        "max_mining_time_ms": 2000,
-        "target_block_time_ms": 500
     },
     "transactions": {
         "max_per_block": 10,
@@ -20,5 +19,8 @@
     "simulation": {
         "duration_seconds": 30,
         "log_interval_ms": 1000
+    },
+    "logging": {
+        "log_mode": "presentation"
     }
 }

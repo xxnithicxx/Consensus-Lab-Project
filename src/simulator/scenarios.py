@@ -103,11 +103,19 @@ class ScenarioRunner:
             duration_ms: Duration of partition in milliseconds
         """
         # Create 2-3 split partition
-        group1 = ["0", "1"]  # Minority group
-        group2 = ["2", "3", "4"]  # Majority group
+        group1 = ["0", "1", "2"]  # Majority group (for hybrid: stakes 200+300+150=650)
+        group2 = ["3", "4"]       # Minority group (for hybrid: stakes 250+100=350)
         
         self.network.create_partition([group1, group2])
         self.logger.info(f"Network partition created: {group1} | {group2}")
+        
+        # Log partition event for all nodes
+        self._log_partition_event_to_consensus("partition_start", {
+            "group1": group1,
+            "group2": group2,
+            "group1_size": len(group1),
+            "group2_size": len(group2)
+        })
         
         # Schedule partition end
         threading.Timer(duration_ms / 1000.0, self.heal_partition).start()
@@ -116,6 +124,12 @@ class ScenarioRunner:
         """Heal the network partition"""
         self.network.heal_partition()
         self.logger.info("Network partition healed - full connectivity restored")
+        
+        # Log heal event for all nodes
+        self._log_partition_event_to_consensus("partition_heal", {
+            "action": "network_healed",
+            "full_connectivity": True
+        })
     
     def generate_random_transactions(self, count: int, seed: int) -> None:
         """
@@ -249,6 +263,23 @@ class ScenarioRunner:
         }
         
         self.logger.info(f"SCENARIO EVENT: {log_entry}")
+    
+    def _log_partition_event_to_consensus(self, event_type: str, partition_info: dict) -> None:
+        """
+        Log partition events to all node consensus algorithms
+        
+        Args:
+            event_type: Type of partition event
+            partition_info: Information about the partition
+        """
+        for node in self.nodes:
+            if hasattr(node, 'consensus') and node.consensus:
+                # Check if consensus has partition logging method
+                if hasattr(node.consensus, '_log_partition_event'):
+                    try:
+                        node.consensus._log_partition_event(event_type, partition_info)
+                    except Exception as e:
+                        self.logger.debug(f"Failed to log partition event to node {node.node_id}: {e}")
 
 
 class NetworkDelaysScenario:

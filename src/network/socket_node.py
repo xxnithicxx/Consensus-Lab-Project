@@ -238,11 +238,27 @@ class SocketNode:
                 # Fallback: reconstruct from dict if needed
                 block = Block.from_dict(block)
             
-            # Validate and add block
-            if self.blockchain.is_valid_block(block):
+            # Enhanced validation: Check both blockchain structure AND consensus rules
+            is_structurally_valid = self.blockchain.is_valid_block(block)
+            is_consensus_valid = False
+            
+            if is_structurally_valid:
+                # Use consensus algorithm to validate the block
+                is_consensus_valid = self.consensus.validate_block(block, message.sender_id)
+            
+            # Only add block if both validations pass
+            if is_structurally_valid and is_consensus_valid:
                 success = self.blockchain.add_block(block)
                 if success:
                     self.logger.info(f"Added block {block.height} from {message.sender_id}")
+                else:
+                    self.logger.warning(f"Failed to add valid block {block.height} from {message.sender_id}")
+            else:
+                # Log why validation failed (at DEBUG level to reduce noise)
+                if not is_structurally_valid:
+                    self.logger.debug(f"Block {block.height} from {message.sender_id} failed structural validation")
+                if not is_consensus_valid:
+                    self.logger.debug(f"Block {block.height} from {message.sender_id} failed consensus validation")
                     
             self.log_event("block_received", {
                 "height": block.height,
